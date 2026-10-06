@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  chatbot-api:
+    build: .
+    container_name: looloo-chatbot-api
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4200,http://localhost:8080,http://localhost:18080}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: llama2
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_USER: ${PG_USER:-postgres}
+      PG_PASSWORD: ${PG_PASSWORD:-postgres}
+      PG_DATABASE: ${PG_DATABASE:-looloo}
+      PG_SSL: "false"
+      MONGO_URI: mongodb://mongodb:27017/looloo
+    depends_on:
+      - ollama
+      - postgres
+      - mongodb
+    networks:
+      - looloo-network
+    command: npm run start:dev
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: looloo-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - looloo-network
+    environment:
+      OLLAMA_MODELS: /root/.ollama/models
+    entrypoint: /bin/sh
+    command: -c "ollama pull llama2 && ollama serve"
+
+  postgres:
+    image: postgres:16
+    container_name: looloo-postgres
+    environment:
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-postgres}
+      POSTGRES_DB: ${PG_DATABASE:-looloo}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - looloo-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-postgres} -d ${PG_DATABASE:-looloo}"]
+      timeout: 20s
+      retries: 10
+
+  mongodb:
+    image: mongo:latest
+    container_name: looloo-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: looloo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    networks:
+      - looloo-network
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      timeout: 20s
+      retries: 10
+
+volumes:
+  ollama-data:
+  postgres-data:
+  mongodb-data:
+
+networks:
+  looloo-network:
+    driver: bridge

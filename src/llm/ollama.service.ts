@@ -1,0 +1,204 @@
+import { Injectable } from '@nestjs/common';
+import axios, { AxiosInstance } from 'axios';
+import { ToolCall, ToolResult, TOOLS } from '../tools/tools';
+import { ToolsService } from '../tools/tools.service';
+
+export interface Message {
+  role: 'user' | 'assistant' | 'tool';
+  content: string;
+  tool_calls?: ToolCall[];
+}
+
+@Injectable()
+export class OllamaService {
+  private axiosInstance: AxiosInstance;
+  private baseUrl: string;
+  private model: string;
+  private conversations = new Map<string, Message[]>();
+
+  constructor(private toolsService: ToolsService) {
+    this.baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+    this.model = process.env.OLLAMA_MODEL || 'llama2';
+    this.axiosInstance = axios.create({
+      baseURL: this.baseUrl,
+      timeout: 30000,
+    });
+  }
+
+  async chat(userMessage: string, conversationId = 'default'): Promise<{ response: string; toolResults?: ToolResult[] }> {
+    const conversationHistory = this.getHistory(conversationId);
+    // Add user message to history
+    conversationHistory.push({
+      role: 'user',
+      content: userMessage,
+    });
+    this.conversations.set(conversationId, conversationHistory);
+
+    // Build the system prompt with tool definitions
+    const systemPrompt = this.buildSystemPrompt();
+
+    // Build messages for the API call
+    const messages = this.buildMessages(conversationHistory);
+
+    try {
+      // Call Ollama API
+      const response = await this.axiosInstance.post('/api/chat', {
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt,
+          },
+          ...messages,
+        ],
+        stream: false,
+      });
+
+      const assistantMessage = response.data.message.content;
+
+      // Parse tool calls if any
+      const toolResults: ToolResult[] = [];
+      const toolCalls = this.parseToolCalls(assistantMessage);
+
+      if (toolCalls.length > 0) {
+        // Execute tool calls
+        for (const toolCall of toolCalls) {
+          const result = await this.toolsService.executeToolCall(
+            toolCall.tool,
+            toolCall.parameters,
+          );
+          toolResults.push(result);
+        }
+
+        // Add assistant message to history
+        conversationHistory.push({
+          role: 'assistant',
+          content: assistantMessage,
+          tool_calls: toolCalls,
+        });
+
+        // Add tool results to history
+        for (const toolResult of toolResults) {
+          conversationHistory.push({
+            role: 'tool',
+            content: JSON.stringify(toolResult.result || toolResult.error),
+          });
+        }
+
+        // Call LLM again to process tool results
+        const followUpResponse = await this.axiosInstance.post('/api/chat', {
+          model: this.model,
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt,
+            },
+            ...this.buildMessages(conversationHistory),
+          ],
+          stream: false,
+        });
+
+        const finalResponse = followUpResponse.data.message.content;
+        conversationHistory.push({
+          role: 'assistant',
+          content: finalResponse,
+        });
+
+        return {
+          response: finalResponse,
+          toolResults,
+        };
+      }
+
+      // Add assistant message to history
+      conversationHistory.push({
+        role: 'assistant',
+        content: assistantMessage,
+      });
+
+      return {
+        response: assistantMessage,
+      };
+    } catch (error) {
+      console.error('Error calling Ollama:', error);
+      throw new Error(`Failed to get response from Ollama: ${error.message}`);
+    }
+  }
+
+  private buildSystemPrompt(): string {
+    const toolsJson = JSON.stringify(TOOLS, null, 2);
+
+    return `You are an AI assistant for a tour payment management system. You help users query balance information and answer questions about payments.
+
+When PostgreSQL tool results have balance_available=false, explain that the user's profile was found but no transaction table is configured, so a balance cannot be calculated. Never invent a balance.
+
+You have access to the following tools:
+
+${toolsJson}
+
+When the user asks a question that requires data retrieval, use the appropriate tools to fetch the data. 
+Always respond in a friendly and helpful manner.
+Format your responses clearly and provide specific numbers when discussing balances.
+
+If you need to use a tool, format your response as follows:
+TOOL_CALL(tool_name: {"param1": "value1", "param2": "value2"})
+
+You can make multiple tool calls in a single response. After the tool results are returned, provide a natural language summary.`;
+  }
+
+  private buildMessages(conversationHistory: Message[]): any[] {
+    return conversationHistory.map((msg) => ({
+      role: msg.role === 'tool' ? 'assistant' : msg.role,
+      content: msg.content,
+    }));
+  }
+
+  private parseToolCalls(content: string): ToolCall[] {
+    const toolCalls: ToolCall[] = [];
+    const regex = /TOOL_CALL\((\w+):\s*({.*?})\)/g;
+    let match;
+
+    while ((match = regex.exec(content)) !== null) {
+      const toolName = match[1];
+      try {
+        const parameters = JSON.parse(match[2]);
+        toolCalls.push({
+          tool: toolName,
+          parameters,
+        });
+      } catch (e) {
+        console.error(`Failed to parse tool call: ${match[0]}`);
+      }
+    }
+
+    return toolCalls;
+  }
+
+  clearHistory(conversationId = 'default'): void {
+    this.conversations.delete(conversationId);
+  }
+
+  getHistory(conversationId = 'default'): Message[] {
+    return [...(this.conversations.get(conversationId) || [])];
+  }
+
+  // Health check method to verify Ollama is running
+  async checkHealth(): Promise<boolean> {
+    try {
+      await this.axiosInstance.post('/api/chat', {
+        model: this.model,
+        messages: [
+          {
+            role: 'user',
+            content: 'Hello',
+          },
+        ],
+        stream: false,
+      });
+      return true;
+    } catch (error) {
+      console.error('Ollama health check failed:', error.message);
+      return false;
+    }
+  }
+}
