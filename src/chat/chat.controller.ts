@@ -27,7 +27,17 @@ export class ChatController {
       throw new BadRequestException('Message must be between 1 and 10000 characters');
     }
 
-    return this.chatService.processMessage(message.trim(), this.scope(request, conversationId));
+    return this.chatService.processMessage(message.trim(), this.scope(request, conversationId), Number(request.chatUserId));
+  }
+
+  @UseGuards(ChatAuthGuard)
+  @Post('knowledge')
+  async addKnowledge(@Body() body: { content: string; title?: string }, @Req() request: AuthenticatedChatRequest): Promise<any> {
+    if (typeof body?.content !== 'string' || !body.content.trim() || body.content.length > 100000) {
+      throw new BadRequestException('Knowledge content must be between 1 and 100000 characters');
+    }
+    await this.chatService.indexKnowledge(body.content.trim(), Number(request.chatUserId), { title: body.title || '' });
+    return { success: true };
   }
 
   @UseGuards(ChatAuthGuard)

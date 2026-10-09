@@ -32,7 +32,7 @@ export class ChatAuthGuard implements CanActivate {
     try {
       const payload = jwt.verify(token, secret, { algorithms: ['HS256'] }) as JwtPayload;
       const userId = payload.user_id ?? payload.id;
-      if (userId === undefined || userId === null || userId === '') {
+      if (userId === undefined || userId === null || userId === '' || !Number.isSafeInteger(Number(userId)) || Number(userId) < 1) {
         throw new UnauthorizedException();
       }
       request.chatUserId = String(userId);

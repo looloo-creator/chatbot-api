@@ -11,37 +11,29 @@ export interface ToolDefinition {
 
 export const TOOLS: ToolDefinition[] = [
   {
+    name: 'get_my_tours',
+    description: 'List only the signed-in user’s active tours. Use this to find a tour by plan/name before querying its report.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
     name: 'get_user_balance',
-    description: 'Get a user and balance record from PostgreSQL. Balance totals are included only when a transactions table with user_id, type, and amount columns exists; otherwise balance_available is false.',
+    description: 'Get the signed-in user’s exact collection, expenditure, and balance totals across their active accounts.',
     parameters: {
       type: 'object',
       properties: {
-        user_id: {
-          type: 'number',
-          description: 'The unique ID of the user',
-        },
       },
-      required: ['user_id'],
-    },
-  },
-  {
-    name: 'get_all_users_balance',
-    description: 'Get users and balance records from PostgreSQL. Balance totals are included only when a transactions table with user_id, type, and amount columns exists; otherwise balance_available is false.',
-    parameters: {
-      type: 'object',
-      properties: {},
       required: [],
     },
   },
   {
     name: 'get_member_balance',
-    description: 'Get balance information for a specific member from MongoDB. Returns member details including transactions and balance.',
+    description: 'Get this signed-in user’s member balance from PostgreSQL. Uses the app report rule: each included account is divided evenly among its selected members.',
     parameters: {
       type: 'object',
       properties: {
         member_id: {
           type: 'string',
-          description: 'The MongoDB ObjectId of the member',
+          description: 'The member ID returned by search_user_by_name or get_all_members_with_balance',
         },
       },
       required: ['member_id'],
@@ -49,7 +41,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'get_all_members_with_balance',
-    description: 'Get balance information for all members from MongoDB. Shows detailed balance for each member in the system.',
+    description: 'List members belonging only to the signed-in user, from PostgreSQL.',
     parameters: {
       type: 'object',
       properties: {},
@@ -58,13 +50,13 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'get_account_balance',
-    description: 'Get balance information for a specific account from MongoDB. Returns account details and current balance.',
+    description: 'Get one account belonging to the signed-in user from PostgreSQL.',
     parameters: {
       type: 'object',
       properties: {
         account_id: {
           type: 'string',
-          description: 'The MongoDB ObjectId of the account',
+          description: 'The account ID',
         },
       },
       required: ['account_id'],
@@ -72,13 +64,13 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'get_tour_payment_status',
-    description: 'Get payment status information for a specific tour from MongoDB. Returns tour details and payment information.',
+    description: 'Get the signed-in user’s tour and exact collection, expenditure, and balance totals from PostgreSQL.',
     parameters: {
       type: 'object',
       properties: {
         tour_id: {
           type: 'string',
-          description: 'The MongoDB ObjectId of the tour',
+          description: 'The tour ID returned by this user’s tour list or known from the conversation',
         },
       },
       required: ['tour_id'],
@@ -87,7 +79,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'search_user_by_name',
     description:
-      'Search for users by name to find their ID. Helpful when user asks about a person but only provides their name.',
+      'Search this signed-in user’s tour members by name. Never searches other users.',
     parameters: {
       type: 'object',
       properties: {

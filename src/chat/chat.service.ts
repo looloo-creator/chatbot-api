@@ -5,9 +5,9 @@ import { OllamaService } from '../llm/ollama.service';
 export class ChatService {
   constructor(private ollamaService: OllamaService) {}
 
-  async processMessage(userMessage: string, conversationId: string): Promise<any> {
+  async processMessage(userMessage: string, conversationId: string, userId: number): Promise<any> {
     try {
-      const result = await this.ollamaService.chat(userMessage, conversationId);
+      const result = await this.ollamaService.chat(userMessage, userId, conversationId);
       return {
         success: true,
         response: result.response,
@@ -19,6 +19,10 @@ export class ChatService {
         error: error.message,
       };
     }
+  }
+
+  async indexKnowledge(content: string, userId: number, metadata: Record<string, unknown> = {}): Promise<void> {
+    await this.ollamaService.indexKnowledge(content, userId, metadata);
   }
 
   getConversationHistory(conversationId: string): any {

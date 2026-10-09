@@ -1,6 +1,6 @@
 # Chatbot API - AI Assistant for Tour Payment Management
 
-A backend service that provides an AI-powered chatbot to answer questions about tour payments, member balances, and account information. Uses local LLMs (Ollama) with tool calling to query PostgreSQL and MongoDB databases.
+A backend service that uses Llama through Ollama to answer questions about tours, member balances, and accounts. Operational records and private knowledge are stored in PostgreSQL with pgvector.
 
 ## Architecture
 
@@ -23,16 +23,17 @@ A backend service that provides an AI-powered chatbot to answer questions about 
     └────────────┘    └────┬────┬──┘
                            │    │
                     ┌──────▼──┐ └──────────┐
-                    │PostgreSQL│          │ MongoDB
-                    │ (Users/ │           │ (Members/
-                    │ Balance)│           │  Accounts)
-                    └─────────┘           └─────────┘
+                    │ PostgreSQL + pgvector │
+                    │ users, tours, accounts │
+                    │ and assistant knowledge│
+                    └────────────────────────┘
 ```
 
 ## Features
 
 - **Tool Calling**: LLM can automatically call predefined tools to fetch data
-- **Multi-Database Support**: Query both PostgreSQL and MongoDB seamlessly
+- **Single Database**: User, tour, member, account, and assistant knowledge data use PostgreSQL
+- **RAG**: Ollama embeddings retrieve relevant private knowledge from pgvector
 - **Local LLM**: Uses Ollama for privacy and offline capability
 - **Conversation Memory**: Maintains chat history for context-aware responses
 - **Balance Queries**: Answer questions about user/member balances
@@ -67,7 +68,7 @@ The Ollama server will run on `http://localhost:11434` by default.
 
 ### 3. Ensure Databases are Running
 
-Make sure your PostgreSQL and MongoDB instances are running and accessible.
+Make sure the PostgreSQL database migrated by `looloo-api` and the Ollama server are running.
 
 ## Installation
 
@@ -106,6 +107,7 @@ CORS_ORIGINS=http://localhost:4200,http://localhost:8080,http://localhost:18080
 # Ollama Configuration
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama2
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
 # Options: llama2, mistral, neural-chat, etc.
 
 # PostgreSQL Configuration
@@ -115,9 +117,6 @@ PG_USER=postgres
 PG_PASSWORD=your_password
 PG_DATABASE=looloo
 PG_SSL=false
-
-# MongoDB Configuration
-MONGO_URI=mongodb://localhost:27017/looloo
 
 # API Configuration
 LOOLOO_API_URL=http://localhost:3000
@@ -225,13 +224,13 @@ Try asking the chatbot questions like:
 
 The chatbot has access to these tools:
 
-1. **get_user_balance** - Get a user's balance from PostgreSQL when a supported `transactions` table exists
-2. **get_all_users_balance** - Get user balances from PostgreSQL when a supported `transactions` table exists
-3. **get_member_balance** - Get balance for a specific member (MongoDB)
-4. **get_all_members_with_balance** - Get all members' balances (MongoDB)
-5. **get_account_balance** - Get balance for a specific account (MongoDB)
-6. **get_tour_payment_status** - Get tour payment information (MongoDB)
-7. **search_user_by_name** - Search users by username or email (PostgreSQL)
+1. **get_my_tours** - List the signed-in user's tours
+2. **get_user_balance** - Get the signed-in user's collection, expenditure, and net balance totals
+3. **get_member_balance** - Get a member's balance, splitting each account among selected members
+4. **get_all_members_with_balance** - List the signed-in user's members
+5. **get_account_balance** - Get an account belonging to the signed-in user
+6. **get_tour_payment_status** - Get tour collections, expenditures, and balance
+7. **search_user_by_name** - Search the signed-in user's members by name
 
 ## Architecture Details
 
@@ -246,7 +245,7 @@ LLM analyzes and detects needed tools
     ↓
 ToolsService executes tool calls
     ↓
-PostgreSQL/MongoDB fetch data
+PostgreSQL fetches scoped records; pgvector retrieves relevant knowledge
     ↓
 Results returned to LLM
     ↓
@@ -258,7 +257,7 @@ Response sent to user
 ### Database Layer
 
 - **PostgresService**: Handles PostgreSQL user and optional transaction queries
-- **MongodbService**: Handles all MongoDB operations (members, accounts, tours)
+- **pgvector**: Stores owner-scoped knowledge chunks and retrieves them by Ollama embedding similarity
 - Connection pooling for better performance
 - Error handling and logging
 
@@ -306,7 +305,6 @@ ollama pull llama2
 
 ### Database Connection Error
 - Verify PostgreSQL is running on configured host/port
-- Check MongoDB URI is correct
 - Verify credentials in .env
 
 ### Out of Memory
@@ -335,7 +333,7 @@ ollama pull sqlcoder
 1. **Use GPU**: If available, Ollama will use GPU automatically
 2. **Smaller Models**: Use Mistral for faster responses
 3. **Batch Processing**: Send multiple queries together when possible
-4. **Connection Pooling**: Already configured in PostgreSQL/MongoDB services
+4. **Connection Pooling**: PostgreSQL pool is configured in the API
 5. **Caching**: Can be added for frequently asked questions
 
 ## Security Considerations
